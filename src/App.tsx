@@ -51,18 +51,22 @@ function App() {
     <>
       <section className="upload-panel">
         <label className="text-input-label">
-          <span>Text to summarize</span>
-          <textarea
-            className="summary-input"
-            placeholder="Paste text here..."
-            value={text}
-            onChange={(event) => {
-              setText(event.target.value)
-              setConversionStatus('idle')
-              setSummary('')
-              setError('')
-            }}
-          />
+          <span>Drop file here</span>
+          <input type="file" className="file-input" onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) {
+              const reader = new FileReader()
+              reader.onload = (e) => {
+                const fileContent = e.target?.result as string
+                setText(fileContent)
+                setConversionStatus('idle')
+                setSummary('')
+                setError('')
+              }
+              reader.readAsText(file)
+            }
+          }} />
+         
         </label>
 
         <button

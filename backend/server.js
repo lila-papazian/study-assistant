@@ -1,20 +1,25 @@
 const express = require("express");
 const cors = require("cors");
 
+const BACKEND_PORT = 3000;
+const BACKEND_HOST = "localhost";
+const FRONTEND_ORIGIN = "http://localhost:5173";
+const OLLAMA_CHAT_URL = "http://localhost:11434/api/chat";
+
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: FRONTEND_ORIGIN }));
 app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/summarize", async (req, res) => {
+app.post("/api/summarize", async (req, res) => {
   const { text } = req.body;
 
   try {
-    const ollamaResponse = await fetch("http://127.0.0.1:11434/api/chat", {
+    const ollamaResponse = await fetch(OLLAMA_CHAT_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -46,6 +51,6 @@ app.post("/summarize", async (req, res) => {
   }
 });
 
-app.listen(3001, () => {
-  console.log("Server running on port 3001");
+app.listen(BACKEND_PORT, BACKEND_HOST, () => {
+  console.log(`Backend listening at http://${BACKEND_HOST}:${BACKEND_PORT}`);
 });
