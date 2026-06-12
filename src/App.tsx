@@ -1,70 +1,74 @@
 import { useState } from 'react'
 import './App.css'
-import { getHealth } from './api/health'
 
 type ConversionStatus = 'idle' | 'loading' | 'success'
 
 function App() {
-  const [files, setFiles] = useState<File[]>([])
+  const [text, setText] = useState('')
+  const [summary, setSummary] = useState('')
+  const [error, setError] = useState('')
   const [conversionStatus, setConversionStatus] =
     useState<ConversionStatus>('idle')
 
-  const addFiles = (fileList: FileList | null) => {
-    if (!fileList?.length) {
-      return
+  const handleConvert = async () => {
+    const textToSummarize = text.trim()
+
+    if (!textToSummarize) {
+      return 
     }
 
-    setFiles((currentFiles) => [...currentFiles, ...Array.from(fileList)])
-    setConversionStatus('idle')
-  }
-
-  const handleConvert = async () => {
     setConversionStatus('loading')
+    setSummary('')
+    setError('')
 
-    window.setTimeout(() => {
+    try {
+      const response = await fetch('http://127.0.0.1:3001/summarize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: textToSummarize }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Request failed')
+      }
+
+      const data = (await response.json()) as { summary?: string }
+
+      setSummary(data.summary ?? '')
       setConversionStatus('success')
-    }, 1200)
-
-    const data = await getHealth();
-
-    console.log(data);
+    } catch {
+      setError('Unable to summarize. Please try again.')
+      setConversionStatus('idle')
+    }
   }
 
   const isConverting = conversionStatus === 'loading'
+  const isConvertDisabled = isConverting || text.trim().length === 0
 
   return (
     <>
       <section className="upload-panel">
-        <label
-          className="drop-area"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault()
-            addFiles(event.dataTransfer.files)
-          }}
-        >
-          <span>Drop files here or choose files</span>
-          <input
-            type="file"
-            multiple
-            onChange={(event) => addFiles(event.target.files)}
+        <label className="text-input-label">
+          <span>Text to summarize</span>
+          <textarea
+            className="summary-input"
+            placeholder="Paste text here..."
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value)
+              setConversionStatus('idle')
+              setSummary('')
+              setError('')
+            }}
           />
         </label>
-
-        {files.length > 0 && (
-          <ul className="file-list" aria-label="Uploaded files">
-            {files.map((file, index) => (
-              <li key={`${file.name}-${file.lastModified}-${index}`}>
-                {file.name}
-              </li>
-            ))}
-          </ul>
-        )}
 
         <button
           className="convert-button"
           type="button"
-          disabled={files.length === 0 || isConverting}
+          disabled={isConvertDisabled}
           onClick={handleConvert}
         >
           {isConverting
@@ -73,6 +77,15 @@ function App() {
               ? 'Converted'
               : 'Convert'}
         </button>
+
+        {error && <p className="error-message">{error}</p>}
+
+        {summary && (
+          <section className="summary-result" aria-label="Summary">
+            <h2>Summary</h2>
+            <p>{summary}</p>
+          </section>
+        )}
       </section>
     </>
   )
