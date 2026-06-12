@@ -22,7 +22,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch('http://127.0.0.1:3001/summarize', {
+      const response = await fetch('/api/summarize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
