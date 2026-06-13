@@ -4,69 +4,43 @@ import './App.css'
 type ConversionStatus = 'idle' | 'loading' | 'success'
 
 function App() {
-  const [text, setText] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState('')
   const [error, setError] = useState('')
   const [conversionStatus, setConversionStatus] =
     useState<ConversionStatus>('idle')
 
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    setSelectedFile(file)
+  }
+
   const handleConvert = async () => {
-    const textToSummarize = text.trim()
-
-    if (!textToSummarize) {
-      return 
-    }
-
+    if (!selectedFile) return;
     setConversionStatus('loading')
-    setSummary('')
     setError('')
-
-    try {
-      const response = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text: textToSummarize }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Request failed')
-      }
-
-      const data = (await response.json()) as { summary?: string }
-
-      setSummary(data.summary ?? '')
-      setConversionStatus('success')
-    } catch {
-      setError('Unable to summarize. Please try again.')
-      setConversionStatus('idle')
-    }
+    setSummary('')
   }
 
   const isConverting = conversionStatus === 'loading'
-  const isConvertDisabled = isConverting || text.trim().length === 0
+  const isConvertDisabled = isConverting || !selectedFile
 
   return (
     <>
       <section className="upload-panel">
         <label className="text-input-label">
           <span>Drop file here</span>
-          <input type="file" className="file-input" onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) {
-              const reader = new FileReader()
-              reader.onload = (e) => {
-                const fileContent = e.target?.result as string
-                setText(fileContent)
-                setConversionStatus('idle')
-                setSummary('')
-                setError('')
-              }
-              reader.readAsText(file)
-            }
-          }} />
-         
+          <input
+            type="file"
+            className="file-input"
+            onChange={handleFileUpload}
+          />
+
         </label>
 
         <button

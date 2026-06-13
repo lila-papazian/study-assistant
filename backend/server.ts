@@ -1,5 +1,6 @@
-const express = require("express");
-const cors = require("cors");
+import express, { json } from "express";
+import cors from "cors";
+import formidable, { Fields, Files } from "formidable";
 
 const BACKEND_PORT = 3000;
 const BACKEND_HOST = "localhost";
@@ -8,15 +9,32 @@ const OLLAMA_CHAT_URL = "http://localhost:11434/api/chat";
 
 const app = express();
 
-app.use(cors({ origin: FRONTEND_ORIGIN }));
-app.use(express.json());
+interface SummarizeRequestBody {
+  text: string;
+}
 
-app.get("/health", (req, res) => {
+app.use(cors({ origin: FRONTEND_ORIGIN }));
+app.use(json());
+
+app.get("/health", (req: express.Request, res: express.Response) => {
   res.json({ status: "ok" });
 });
 
-app.post("/api/summarize", async (req, res) => {
-  const { text } = req.body;
+app.post("/api/upload", (req: express.Request, res: express.Response, next: express.NextFunction) => { 
+  const form = formidable({ maxFiles: 1, multiples: false });
+
+  form.parse(req, (err: any, fields: Fields<string>, files: Files<string>) => {
+    if (err) {
+      next(err);
+      return;
+    }
+
+    res.json({ fields, files });
+  });
+});
+
+app.post("/api/summarize", async (req: express.Request, res: express.Response) => {
+  const { text } = req.body as SummarizeRequestBody;
 
   try {
     const ollamaResponse = await fetch(OLLAMA_CHAT_URL, {
