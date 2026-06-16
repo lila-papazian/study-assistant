@@ -1,6 +1,9 @@
 import express, { json } from "express";
 import cors from "cors";
 import formidable, { Fields, Files } from "formidable";
+import { readFile } from "node:fs/promises";
+import { PDFParse } from "pdf-parse";
+import getUploadedFile from "./utils/getUploadedFile";
 
 const BACKEND_PORT = 3000;
 const BACKEND_HOST = "localhost";
@@ -13,6 +16,7 @@ interface SummarizeRequestBody {
   text: string;
 }
 
+
 app.use(cors({ origin: FRONTEND_ORIGIN }));
 app.use(json());
 
@@ -23,13 +27,37 @@ app.get("/health", (req: express.Request, res: express.Response) => {
 app.post("/api/upload", (req: express.Request, res: express.Response, next: express.NextFunction) => { 
   const form = formidable({ maxFiles: 1, multiples: false });
 
-  form.parse(req, (err: any, fields: Fields<string>, files: Files<string>) => {
+  form.parse(req, async (err: any, fields: Fields<string>, files: Files<string>) => {
     if (err) {
       next(err);
       return;
     }
 
-    res.json({ fields, files });
+    const uploadedFile = getUploadedFile(files);
+
+    if (!uploadedFile) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    let parser: PDFParse | undefined;
+
+    try {
+      const pdfBuffer = await readFile(uploadedFile.filepath);
+      parser = new PDFParse({ data: pdfBuffer });
+      const result = await parser.getText();
+
+      res.json({
+        filename: uploadedFile.originalFilename,
+        textLength: result.text.length,
+        text: result.text,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to extract PDF text" });
+    } finally {
+      await parser?.destroy();
+    }
   });
 });
 
