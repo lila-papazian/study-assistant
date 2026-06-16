@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { PDFParse } from "pdf-parse";
 import getUploadedFile from "./utils/getUploadedFile";
+import { buildSummaryPrompt, SUMMARY_SYSTEM_PROMPT } from "./prompts/summarize";
 
 const BACKEND_PORT = 3000;
 const BACKEND_HOST = "localhost";
@@ -26,7 +27,7 @@ app.get("/health", (req: express.Request, res: express.Response) => {
   res.json({ status: "ok" });
 });
 
-app.post("/api/upload", (req: express.Request, res: express.Response, next: express.NextFunction) => { 
+app.post("/api/upload", (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const form = formidable({ maxFiles: 1, multiples: false });
 
   form.parse(req, async (err: any, fields: Fields<string>, files: Files<string>) => {
@@ -87,13 +88,11 @@ app.post(
             messages: [
               {
                 role: "system",
-                content:
-                  "You are a concise assistant that summarizes texts clearly.",
+                content: SUMMARY_SYSTEM_PROMPT,
               },
               {
                 role: "user",
-                content:
-                  `Summarize this text:\n\n${text}`,
+                content: buildSummaryPrompt(text),
               },
             ],
           }),
