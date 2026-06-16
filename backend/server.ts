@@ -2,6 +2,8 @@ import express, { json } from "express";
 import cors from "cors";
 import formidable, { Fields, Files } from "formidable";
 import { readFile } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { PDFParse } from "pdf-parse";
 import getUploadedFile from "./utils/getUploadedFile";
 
@@ -61,41 +63,78 @@ app.post("/api/upload", (req: express.Request, res: express.Response, next: expr
   });
 });
 
-app.post("/api/summarize", async (req: express.Request, res: express.Response) => {
-  const { text } = req.body as SummarizeRequestBody;
+app.post(
+  "/api/summarize",
+  async (
+    req: express.Request,
+    res: express.Response
+  ) => {
+    const { text } =
+      req.body as SummarizeRequestBody;
 
-  try {
-    const ollamaResponse = await fetch(OLLAMA_CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen3:latest",
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: "You are a concise assistant that summarizes texts clearly.",
+    try {
+      const ollamaResponse = await fetch(
+        OLLAMA_CHAT_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
           },
-          {
-            role: "user",
-            content: `Summarize this text:\n\n${text}`,
-          },
-        ],
-      }),
-    });
+          body: JSON.stringify({
+            model: "gemma3:1b",
+            stream: true,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a concise assistant that summarizes texts clearly.",
+              },
+              {
+                role: "user",
+                content:
+                  `Summarize this text:\n\n${text}`,
+              },
+            ],
+          }),
+        }
+      );
 
-    const data = await ollamaResponse.json();
+      if (!ollamaResponse.ok) {
+        throw new Error(
+          `Ollama returned ${ollamaResponse.status}`
+        );
+      }
 
-    res.json({
-      summary: data.message.content,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to connect to Ollama" });
+      if (!ollamaResponse.body) {
+        throw new Error(
+          "Ollama returned no body"
+        );
+      }
+
+      res.setHeader(
+        "Content-Type",
+        "application/x-ndjson"
+      );
+
+      await pipeline(
+        Readable.fromWeb(
+          ollamaResponse.body as any
+        ),
+        res
+      );
+    } catch (err) {
+      console.error(err);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          error:
+            "Failed to connect to Ollama",
+        });
+      }
+    }
   }
-});
+);
 
 app.listen(BACKEND_PORT, BACKEND_HOST, () => {
   console.log(`Backend listening at http://${BACKEND_HOST}:${BACKEND_PORT}`);
