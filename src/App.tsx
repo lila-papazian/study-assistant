@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './App.css';
 
-import { uploadPdf, summarizeText } from './services/api';
+import { uploadPdf, summarizeStream } from './services/api';
 
 type ConversionStatus =
   | 'idle'
@@ -11,7 +11,9 @@ type ConversionStatus =
   | 'error';
 
 function App() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] =
+    useState<File | null>(null);
+
   const [summary, setSummary] = useState('');
   const [error, setError] = useState('');
 
@@ -22,6 +24,7 @@ function App() {
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
+
     if (!file) {
       return;
     }
@@ -43,15 +46,20 @@ function App() {
 
       setConversionStatus('uploading');
 
-      const uploadData = await uploadPdf(selectedFile);
+      const uploadData = await uploadPdf(
+        selectedFile
+      );
 
       setConversionStatus('summarizing');
 
-      const summarizeData = await summarizeText(
-        uploadData.text
+      await summarizeStream(
+        uploadData.text,
+        (token: string) => {
+          setSummary(
+            previous => previous + token
+          );
+        }
       );
-
-      setSummary(summarizeData.summary);
 
       setConversionStatus('success');
     } catch (error) {
@@ -63,7 +71,6 @@ function App() {
         'Failed to process PDF. Please try again.'
       );
     }
-
   };
 
   const isBusy =
@@ -90,52 +97,53 @@ function App() {
       default:
         return 'Generate summary';
     }
-
   })();
 
-  return (<section className="upload-panel"> <label className="text-input-label"> <span>Select PDF</span>
+  return (
+    <section className="upload-panel">
+      <label className="text-input-label">
+        <span>Select PDF</span>
 
-    <input
-      type="file"
-      accept=".pdf"
-      className="file-input"
-      onChange={handleFileUpload}
-    />
-  </label>
+        <input
+          type="file"
+          accept=".pdf"
+          className="file-input"
+          onChange={handleFileUpload}
+        />
+      </label>
 
-    {selectedFile && (
-      <p>
-        Selected file: {selectedFile.name}
-      </p>
-    )}
+      {selectedFile && (
+        <p>
+          Selected file: {selectedFile.name}
+        </p>
+      )}
 
-    <button
-      className="convert-button"
-      type="button"
-      disabled={isConvertDisabled}
-      onClick={handleConvert}
-    >
-      {buttonLabel}
-    </button>
-
-    {error && (
-      <p className="error-message">
-        {error}
-      </p>
-    )}
-
-    {summary && (
-      <section
-        className="summary-result"
-        aria-label="Summary"
+      <button
+        className="convert-button"
+        type="button"
+        disabled={isConvertDisabled}
+        onClick={handleConvert}
       >
-        <h2>Summary</h2>
+        {buttonLabel}
+      </button>
 
-        <p>{summary}</p>
-      </section>
-    )}
-  </section>
+      {error && (
+        <p className="error-message">
+          {error}
+        </p>
+      )}
 
+      {summary && (
+        <section
+          className="summary-result"
+          aria-label="Summary"
+        >
+          <h2>Summary</h2>
+
+          <p>{summary}</p>
+        </section>
+      )}
+    </section>
   );
 }
 

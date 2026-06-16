@@ -7,3 +7,10 @@ export interface UploadResponse {
 export interface SummarizeResponse {
   summary: string;
 }
+
+export interface OllamaChunk {
+  message?: {
+    content?: string;
+  };
+  done?: boolean;
+}
