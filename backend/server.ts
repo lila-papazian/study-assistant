@@ -83,7 +83,7 @@ app.post(
               "application/json",
           },
           body: JSON.stringify({
-            model: "gemma3:1b",
+            model: "gemma3:4b",
             stream: true,
             messages: [
               {

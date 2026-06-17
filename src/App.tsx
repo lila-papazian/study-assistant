@@ -2,6 +2,7 @@ import { useState } from 'react';
 import './App.css';
 
 import { uploadPdf, summarizeStream } from './services/api';
+import SummaryMarkdown from './components/SummaryMarkdown';
 
 type ConversionStatus =
   | 'idle'
@@ -140,7 +141,7 @@ function App() {
         >
           <h2>Summary</h2>
 
-          <p>{summary}</p>
+          <SummaryMarkdown content={summary} />
         </section>
       )}
     </section>
