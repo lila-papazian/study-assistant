@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, lazy, Suspense } from 'react';
 import './App.css';
 
 import { uploadPdf, summarizeStream } from './services/api';
-import SummaryMarkdown from './components/SummaryMarkdown';
+
+const SummaryMarkdown = lazy(() => import('./components/SummaryMarkdown'));
 
 type ConversionStatus =
   | 'idle'
@@ -11,16 +12,79 @@ type ConversionStatus =
   | 'success'
   | 'error';
 
+const loadingMessages = [
+  'Distilling key concepts...',
+  'Organizing your study notes...',
+  'Pulling out the important bits...',
+  'Structuring the material...',
+];
+
 function App() {
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
 
+  const loadingMessage =
+    useRef(
+      loadingMessages[
+        Math.floor(
+          Math.random() *
+            loadingMessages.length
+        )
+      ]
+    );
+
   const [summary, setSummary] = useState('');
   const [error, setError] = useState('');
+
+  const [isDragging, setIsDragging] =
+    useState(false);
 
   const [conversionStatus, setConversionStatus] =
     useState<ConversionStatus>('idle');
 
+  const resetWorkflow = () => {
+    setSummary('');
+    setError('');
+    setConversionStatus('idle');
+  };
+
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+  const handleSelectedFile = (
+    file: File
+  ) => {
+    resetWorkflow();
+
+    const isPdf =
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
+
+    if (!isPdf) {
+      setError(
+        'Please select a PDF file.'
+      );
+
+      return;
+    }
+
+    if (file.size === 0) {
+      setError(
+        'The selected file is empty.'
+      );
+
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      setError(
+        'File is too large. Maximum size is 50 MB.'
+      );
+
+      return;
+    }
+
+    setSelectedFile(file);
+  };
   const handleFileUpload = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -30,10 +94,48 @@ function App() {
       return;
     }
 
-    setSelectedFile(file);
-    setSummary('');
-    setError('');
-    setConversionStatus('idle');
+    handleSelectedFile(file);
+  };
+
+  const handleDragOver = (
+    event: React.DragEvent<HTMLLabelElement>
+  ) => {
+    event.preventDefault();
+
+    if (!isDragging) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (
+    event: React.DragEvent<HTMLLabelElement>
+  ) => {
+    if (
+      event.currentTarget.contains(
+        event.relatedTarget as Node
+      )
+    ) {
+      return;
+    }
+
+    setIsDragging(false);
+  };
+
+  const handleDrop = (
+    event: React.DragEvent<HTMLLabelElement>
+  ) => {
+    event.preventDefault();
+
+    setIsDragging(false);
+
+    const file =
+      event.dataTransfer.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    handleSelectedFile(file);
   };
 
   const handleConvert = async () => {
@@ -41,10 +143,23 @@ function App() {
       return;
     }
 
-    try {
-      setError('');
-      setSummary('');
+    if (conversionStatus === 'success') {
+      resetWorkflow();
+      return;
+    }
 
+    loadingMessage.current =
+      loadingMessages[
+        Math.floor(
+          Math.random() *
+            loadingMessages.length
+        )
+      ];
+
+    setError('');
+    setSummary('');
+
+    try {
       setConversionStatus('uploading');
 
       const uploadData = await uploadPdf(
@@ -53,37 +168,64 @@ function App() {
 
       setConversionStatus('summarizing');
 
-      await summarizeStream(
-        uploadData.text,
-        (token: string) => {
-          setSummary(
-            previous => previous + token
-          );
-        }
-      );
+      try {
+        await summarizeStream(
+          uploadData.text,
+          (token: string) => {
+            setSummary(
+              previous => previous + token
+            );
+          }
+        );
+      } catch {
+        setConversionStatus('error');
+        setError(
+          'Failed to generate summary. Please try again.'
+        );
+        return;
+      }
 
       setConversionStatus('success');
-    } catch (error) {
-      console.error(error);
-
+    } catch {
       setConversionStatus('error');
 
       setError(
-        'Failed to process PDF. Please try again.'
+        'Failed to upload PDF. The file may be too large or corrupted.'
       );
     }
   };
 
   const handleDownloadMarkdown = () => {
-    const blob = new Blob([summary], {
-      type: "text/markdown",
-    });
+    const markdownContent = `
+# Study Notes
 
-    const url = URL.createObjectURL(blob);
+Source: ${selectedFile?.name.split('.')[0]}
+Generated: ${new Date().toLocaleDateString()}
 
-    const link = document.createElement("a");
+---
+
+${summary}
+`;
+
+    const blob = new Blob(
+      [markdownContent],
+      {
+        type: 'text/markdown',
+      }
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement('a');
+
     link.href = url;
-    link.download = `${selectedFile?.name.split('.')[0] || 'study'}-notes.md`;
+
+    link.download = `${selectedFile?.name.split('.')[0] ??
+      'study'
+      }-notes.md`;
+
     link.click();
 
     URL.revokeObjectURL(url);
@@ -94,7 +236,8 @@ function App() {
     conversionStatus === 'summarizing';
 
   const isConvertDisabled =
-    isBusy || !selectedFile;
+    isBusy || (!selectedFile && conversionStatus !== 'error');
+
 
   const buttonLabel = (() => {
     switch (conversionStatus) {
@@ -105,7 +248,7 @@ function App() {
         return 'Generating summary...';
 
       case 'success':
-        return 'Summary generated';
+        return 'Convert another';
 
       case 'error':
         return 'Try again';
@@ -119,12 +262,19 @@ function App() {
     switch (conversionStatus) {
       case 'uploading':
         return 'Uploading your material...';
+
       case 'summarizing':
-        return 'Generating study notes...';
+        return loadingMessage.current;
+
       case 'success':
         return 'Study notes generated successfully.';
+
       case 'error':
-        return error || 'An error occurred. Please try again.';
+        return (
+          error ??
+          'An error occurred. Please try again.'
+        );
+
       default:
         return '';
     }
@@ -133,15 +283,21 @@ function App() {
   return (
     <>
       <header className="app-header">
-        <p>Folio</p>
-        <p className="tagline">Tame the unread stack.</p>
+        <h1>Folio</h1>
+
+        <p className="tagline">
+          Tame the unread stack.
+        </p>
+
         <p className="header-description">
-          Transform course material into focused study notes.
+          Transform course material into
+          focused study notes.
         </p>
       </header>
 
       <section className="supported-materials">
-        <p>Supported Materials</p>
+        <h2>Supported Materials</h2>
+
         <ul className="materials-list">
           <li>Lecture notes</li>
           <li>Course PDFs</li>
@@ -152,19 +308,41 @@ function App() {
 
       <section className="trust-statement">
         <p className="trust-item">
-          <strong>Local-first by design.</strong>
+          <strong>
+            Local-first by design.
+          </strong>
         </p>
+
         <p className="trust-item">
-          Your study material remains under your control.
+          Your study material remains under
+          your control.
         </p>
       </section>
 
       <main className="workspace">
         <section className="upload-section">
-          <p className="upload-title">Upload Study Material</p>
+          <h2 className="upload-title">
+            Upload Study Material
+          </h2>
 
-          <label className="file-input-wrapper">
-            <span className="file-input-label">Choose file or drag and drop</span>
+          <label
+            className={`file-input-wrapper ${isDragging
+                ? 'drag-active'
+                : ''
+              }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <span className="file-input-label">
+              Drop a PDF here or click to
+              browse
+            </span>
+
+            <p className="file-input-hint">
+              Lecture notes, course PDFs,
+              slide decks and study guides
+            </p>
 
             <input
               type="file"
@@ -177,26 +355,76 @@ function App() {
 
           {selectedFile && (
             <div className="file-metadata">
-              <p className="metadata-label">Material:</p>
-              <p className="metadata-value">{selectedFile.name}</p>
+              <p className="metadata-label">
+                Material:
+              </p>
+
+              <p className="metadata-value">
+                {selectedFile.name}
+              </p>
+
               <p className="metadata-hint">
-                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                {(
+                  selectedFile.size /
+                  1024 /
+                  1024
+                ).toFixed(2)}{' '}
+                MB
               </p>
             </div>
           )}
 
           <div className="workflow-steps">
-            <div className={`step ${selectedFile ? 'active' : ''}`}>
-              <span className="step-number">1</span>
-              <span className="step-label">Upload material</span>
+            <div
+              className={`step ${selectedFile
+                  ? 'active'
+                  : ''
+                }`}
+            >
+              <span className="step-number">
+                1
+              </span>
+
+              <span className="step-label">
+                Upload material
+              </span>
             </div>
-            <div className={`step ${conversionStatus === 'summarizing' || conversionStatus === 'success' ? 'active' : ''}`}>
-              <span className="step-number">2</span>
-              <span className="step-label">Generate summary</span>
+
+            <div
+              className={`step ${conversionStatus ===
+                  'summarizing' ||
+                  conversionStatus ===
+                  'success'
+                  ? 'active'
+                  : ''
+                }`}
+            >
+              <span className="step-number">
+                2
+              </span>
+
+              <span className="step-label">
+                Generate summary
+              </span>
             </div>
-            <div className={`step ${conversionStatus === 'success' ? 'active' : ''}`}>
-              <span className="step-number">3</span>
-              <span className="step-label">Review notes</span>
+
+            <div
+              className={`step ${conversionStatus ===
+                  'success'
+                  ? 'active completed'
+                  : ''
+                }`}
+            >
+              <span className="step-number">
+                {conversionStatus ===
+                  'success'
+                  ? '\u2713'
+                  : '3'}
+              </span>
+
+              <span className="step-label">
+                Review notes
+              </span>
             </div>
           </div>
 
@@ -204,38 +432,70 @@ function App() {
             <button
               className="convert-button"
               type="button"
-              disabled={isConvertDisabled}
+              disabled={
+                isConvertDisabled
+              }
               onClick={handleConvert}
             >
               {buttonLabel}
             </button>
 
-            {conversionStatus !== 'idle' && conversionStatus !== 'success' && (
-              <div className="status-message" role="status" aria-live="polite">
-                {getStatusMessage()}
-              </div>
-            )}
+            {conversionStatus !==
+              'idle' &&
+              conversionStatus !==
+              'success' && (
+                <div
+                  className="status-message"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {getStatusMessage()}
+                </div>
+              )}
 
-            {conversionStatus === 'error' && error && (
-              <div className="error-message" role="alert">
-                {error}
-              </div>
-            )}
+            {conversionStatus ===
+              'error' &&
+              error && (
+                <div
+                  className="error-message"
+                  role="alert"
+                >
+                  {error}
+                </div>
+              )}
           </div>
         </section>
 
         {summary && (
-          <section className="study-notes-result" aria-label="Generated Study Notes">
+          <section
+            className="study-notes-result"
+            aria-label="Generated Study Notes"
+          >
             <button
               type="button"
               className="download-button"
-              onClick={handleDownloadMarkdown}
+              onClick={
+                handleDownloadMarkdown
+              }
             >
               Download notes
             </button>
-            <p>Generated Study Notes</p>
 
-            <SummaryMarkdown content={summary} />
+            <h2>
+              Generated Study Notes
+            </h2>
+
+            <Suspense
+              fallback={
+                <p className="status-message">
+                  Loading renderer...
+                </p>
+              }
+            >
+              <SummaryMarkdown
+                content={summary}
+              />
+            </Suspense>
           </section>
         )}
       </main>
