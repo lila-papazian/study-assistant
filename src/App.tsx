@@ -477,11 +477,6 @@ ${summary}
               </div>
             )}
 
-            {conversionStatus === 'error' && error && (
-              <div className="error-message" role="alert">
-                {error}
-              </div>
-            )}
           </div>
         </section>
 
