@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense } from 'react';
+import { useState, useRef, lazy, Suspense, useEffect } from 'react';
 import './App.css';
 
 import { uploadPdf, summarizeStream } from './services/api';
@@ -23,13 +23,29 @@ function App() {
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const abortOnLeave = () => {
+      abortControllerRef.current?.abort();
+    };
+
+    window.addEventListener('beforeunload', abortOnLeave);
+    window.addEventListener('pagehide', abortOnLeave);
+
+    return () => {
+      window.removeEventListener('beforeunload', abortOnLeave);
+      window.removeEventListener('pagehide', abortOnLeave);
+    };
+  }, []);
+
   const loadingMessage =
     useRef(
       loadingMessages[
-        Math.floor(
-          Math.random() *
-            loadingMessages.length
-        )
+      Math.floor(
+        Math.random() *
+        loadingMessages.length
+      )
       ]
     );
 
@@ -138,7 +154,7 @@ function App() {
     handleSelectedFile(file);
   };
 
-  const handleConvert = async () => {
+const handleConvert = async () => {
     if (!selectedFile) {
       return;
     }
@@ -150,21 +166,19 @@ function App() {
 
     loadingMessage.current =
       loadingMessages[
-        Math.floor(
-          Math.random() *
-            loadingMessages.length
-        )
+        Math.floor(Math.random() * loadingMessages.length)
       ];
 
     setError('');
     setSummary('');
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       setConversionStatus('uploading');
 
-      const uploadData = await uploadPdf(
-        selectedFile
-      );
+      const uploadData = await uploadPdf(selectedFile, controller.signal);
 
       setConversionStatus('summarizing');
 
@@ -172,27 +186,34 @@ function App() {
         await summarizeStream(
           uploadData.text,
           (token: string) => {
-            setSummary(
-              previous => previous + token
-            );
-          }
+            setSummary(previous => previous + token);
+          },
+          controller.signal
         );
-      } catch {
+      } catch (err) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
         setConversionStatus('error');
-        setError(
-          'Failed to generate summary. Please try again.'
-        );
+        setError('Failed to generate summary. Please try again.');
         return;
       }
 
       setConversionStatus('success');
-    } catch {
-      setConversionStatus('error');
+    } catch (err) {
+      if (controller.signal.aborted) {
+        return;
+      }
 
-      setError(
-        'Failed to upload PDF. The file may be too large or corrupted.'
-      );
+      setConversionStatus('error');
+      setError('Failed to upload PDF. The file may be too large or corrupted.');
     }
+  };
+
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+    resetWorkflow();
   };
 
   const handleDownloadMarkdown = () => {
@@ -327,8 +348,8 @@ ${summary}
 
           <label
             className={`file-input-wrapper ${isDragging
-                ? 'drag-active'
-                : ''
+              ? 'drag-active'
+              : ''
               }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -377,8 +398,8 @@ ${summary}
           <div className="workflow-steps">
             <div
               className={`step ${selectedFile
-                  ? 'active'
-                  : ''
+                ? 'active'
+                : ''
                 }`}
             >
               <span className="step-number">
@@ -392,11 +413,11 @@ ${summary}
 
             <div
               className={`step ${conversionStatus ===
-                  'summarizing' ||
-                  conversionStatus ===
-                  'success'
-                  ? 'active'
-                  : ''
+                'summarizing' ||
+                conversionStatus ===
+                'success'
+                ? 'active'
+                : ''
                 }`}
             >
               <span className="step-number">
@@ -410,9 +431,9 @@ ${summary}
 
             <div
               className={`step ${conversionStatus ===
-                  'success'
-                  ? 'active completed'
-                  : ''
+                'success'
+                ? 'active completed'
+                : ''
                 }`}
             >
               <span className="step-number">
@@ -429,40 +450,38 @@ ${summary}
           </div>
 
           <div className="action-area">
-            <button
-              className="convert-button"
-              type="button"
-              disabled={
-                isConvertDisabled
-              }
-              onClick={handleConvert}
-            >
-              {buttonLabel}
-            </button>
+            <div className="action-buttons">
+              <button
+                className="convert-button"
+                type="button"
+                disabled={isConvertDisabled}
+                onClick={handleConvert}
+              >
+                {buttonLabel}
+              </button>
 
-            {conversionStatus !==
-              'idle' &&
-              conversionStatus !==
-              'success' && (
-                <div
-                  className="status-message"
-                  role="status"
-                  aria-live="polite"
+              {isBusy && (
+                <button
+                  className="cancel-button"
+                  type="button"
+                  onClick={handleCancel}
                 >
-                  {getStatusMessage()}
-                </div>
+                  Cancel
+                </button>
               )}
+            </div>
 
-            {conversionStatus ===
-              'error' &&
-              error && (
-                <div
-                  className="error-message"
-                  role="alert"
-                >
-                  {error}
-                </div>
-              )}
+            {conversionStatus !== 'idle' && conversionStatus !== 'success' && (
+              <div className="status-message" role="status" aria-live="polite">
+                {getStatusMessage()}
+              </div>
+            )}
+
+            {conversionStatus === 'error' && error && (
+              <div className="error-message" role="alert">
+                {error}
+              </div>
+            )}
           </div>
         </section>
 

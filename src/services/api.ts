@@ -5,7 +5,8 @@ import type {
 } from '../types/api';
 
 export async function uploadPdf(
-  file: File
+  file: File,
+  signal?: AbortSignal
 ): Promise<UploadResponse> {
   const formData = new FormData();
 
@@ -14,6 +15,7 @@ export async function uploadPdf(
   const response = await fetch('/api/upload', {
     method: 'POST',
     body: formData,
+    signal,
   });
 
   if (!response.ok) {
@@ -24,7 +26,8 @@ export async function uploadPdf(
 }
 
 export async function summarizeText(
-  text: string
+  text: string,
+  signal?: AbortSignal
 ): Promise<SummarizeResponse> {
   const response = await fetch('/api/summarize', {
     method: 'POST',
@@ -34,6 +37,7 @@ export async function summarizeText(
     body: JSON.stringify({
       text,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -45,7 +49,8 @@ export async function summarizeText(
 
 export async function summarizeStream(
   text: string,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch("/api/summarize", {
     method: "POST",
@@ -53,6 +58,7 @@ export async function summarizeStream(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ text }),
+    signal,
   });
 
   if (!response.ok) {
@@ -69,8 +75,7 @@ export async function summarizeStream(
   let buffer = "";
 
   while (true) {
-    const { value, done } =
-      await reader.read();
+    const { value, done } = await reader.read();
 
     if (done) {
       break;
@@ -89,11 +94,9 @@ export async function summarizeStream(
         continue;
       }
 
-      const chunk =
-        JSON.parse(line) as OllamaChunk;
+      const chunk = JSON.parse(line) as OllamaChunk;
 
-      const token =
-        chunk.message?.content ?? "";
+      const token = chunk.message?.content ?? "";
 
       if (token) {
         onToken(token);

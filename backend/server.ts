@@ -73,15 +73,21 @@ app.post(
     const { text } =
       req.body as SummarizeRequestBody;
 
+    const ollamaAbortController = new AbortController();
+
+    req.on("close", () => {
+      ollamaAbortController.abort();
+    });
+
     try {
       const ollamaResponse = await fetch(
         OLLAMA_CHAT_URL,
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
+          signal: ollamaAbortController.signal,
           body: JSON.stringify({
             model: "gemma3:4b",
             stream: true,
@@ -100,35 +106,29 @@ app.post(
       );
 
       if (!ollamaResponse.ok) {
-        throw new Error(
-          `Ollama returned ${ollamaResponse.status}`
-        );
+        throw new Error(`Ollama returned ${ollamaResponse.status}`);
       }
 
       if (!ollamaResponse.body) {
-        throw new Error(
-          "Ollama returned no body"
-        );
+        throw new Error("Ollama returned no body");
       }
 
-      res.setHeader(
-        "Content-Type",
-        "application/x-ndjson"
-      );
+      res.setHeader("Content-Type", "application/x-ndjson");
 
       await pipeline(
-        Readable.fromWeb(
-          ollamaResponse.body as any
-        ),
+        Readable.fromWeb(ollamaResponse.body as any),
         res
       );
     } catch (err) {
+      if (ollamaAbortController.signal.aborted) {
+        return;
+      }
+
       console.error(err);
 
       if (!res.headersSent) {
         res.status(500).json({
-          error:
-            "Failed to connect to Ollama",
+          error: "Failed to connect to Ollama",
         });
       }
     }
